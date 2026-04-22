@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Group Individualized Authentication Matrix</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 900px;
+    margin: 2em auto;
+    padding: 0 1em;
+    color: #222;
+  }
+  h1 { font-size: 1.4em; }
+  .controls {
+    background: #f5f5f5;
+    padding: 1em;
+    border-radius: 6px;
+    margin-bottom: 1em;
+  }
+  .controls label { display: inline-block; margin-right: 1em; }
+  .controls input[type=number] { width: 5em; }
+  .controls textarea { width: 100%; box-sizing: border-box; margin-top: 0.5em; font-family: monospace; }
+  button {
+    padding: 0.5em 1em;
+    font-size: 1em;
+    cursor: pointer;
+    border: 1px solid #888;
+    background: #fff;
+    border-radius: 4px;
+    margin-right: 0.5em;
+  }
+  button:hover { background: #eee; }
+  #output {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1cm;
+  }
+  .card {
+    border: 1px solid #333;
+    padding: 0.2in;
+    box-sizing: border-box;
+    width: 5in;
+    height: 3in;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    display: flex;
+    flex-direction: column;
+  }
+  .card h2 {
+    margin: 0 0 0.15em 0;
+    font-size: 1.05em;
+    border-bottom: 1px solid #999;
+    padding-bottom: 0.1em;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  th, td {
+    border: 1px solid #bbb;
+    padding: 0.15em 0.35em;
+    text-align: left;
+    overflow: hidden;
+  }
+  th { background: #eee; font-weight: 600; }
+  td.code { font-family: monospace; font-weight: bold; letter-spacing: 0.08em; }
+  .note { font-size: 0.8em; color: #555; margin-top: auto; padding-top: 0.25em; }
+  @media print {
+    .controls, .no-print { display: none; }
+    body { margin: 0.5cm; max-width: none; }
+    #output { gap: 1cm; }
+    .card { border: 1px solid #000; }
+    @page { margin: 0.5cm; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Group Individualized Authentication Matrix</h1>
+<p class="no-print">
+  Generates a unique <strong>Personal Authentication Card</strong> for each group member.
+  Each pair of members shares two codes (one per direction): the code Alpha uses to prove
+  themselves to Bravo is the same code Bravo uses to verify Alpha. No member's card contains
+  the codes used between any two other members.
+</p>
+
+<div class="controls no-print">
+  <label>Number of group members:
+    <input type="number" id="count" min="2" max="50" value="4">
+  </label>
+  <label>Code length:
+    <input type="number" id="codeLen" min="2" max="8" value="2">
+  </label>
+  <label>Code sets per member:
+    <input type="number" id="sets" min="1" max="10" value="1">
+  </label>
+  <br>
+  <label style="display:block; margin-top:0.5em;">
+    Optional names (one per line; leave blank for Alpha, Bravo, Charlie...):
+    <textarea id="names" rows="4" placeholder="Alpha&#10;Bravo&#10;Charlie&#10;Delta"></textarea>
+  </label>
+  <div style="margin-top:0.5em;">
+    <button onclick="generate()">Generate</button>
+    <button onclick="window.print()">Print</button>
+  </div>
+</div>
+
+<div id="output"></div>
+
+<script>
+  const NATO = ["Alpha","Bravo","Charlie","Delta","Echo","Foxtrot","Golf","Hotel",
+                "India","Juliet","Kilo","Lima","Mike","November","Oscar","Papa",
+                "Quebec","Romeo","Sierra","Tango","Uniform","Victor","Whiskey","Xray",
+                "Yankee","Zulu"];
+  const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
+
+  function randomCode(len) {
+    const arr = new Uint32Array(len);
+    crypto.getRandomValues(arr);
+    let s = "";
+    for (let i = 0; i < len; i++) s += ALPHABET[arr[i] % ALPHABET.length];
+    return s;
+  }
+
+  function getNames(n) {
+    const raw = document.getElementById("names").value
+      .split("\n").map(s => s.trim()).filter(Boolean);
+    const names = [];
+    for (let i = 0; i < n; i++) {
+      if (raw[i]) names.push(raw[i]);
+      else if (i < NATO.length) names.push(NATO[i]);
+      else names.push("Member " + (i + 1));
+    }
+    return names;
+  }
+
+  function generate() {
+    const n = parseInt(document.getElementById("count").value, 10);
+    const codeLen = parseInt(document.getElementById("codeLen").value, 10);
+    const sets = Math.max(1, parseInt(document.getElementById("sets").value, 10) || 1);
+    if (!n || n < 2) { alert("Need at least 2 members."); return; }
+
+    const names = getNames(n);
+
+    // One independent code matrix per set. codes[k][i][j] = code member i uses to
+    // prove themselves to member j in set k+1; codes[k][j][i] is the reverse.
+    const allCodes = [];
+    for (let k = 0; k < sets; k++) {
+      const mat = Array.from({length: n}, () => Array(n).fill(""));
+      for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          if (i !== j) mat[i][j] = randomCode(codeLen);
+        }
+      }
+      allCodes.push(mat);
+    }
+
+    const out = document.getElementById("output");
+    out.innerHTML = "";
+
+    // Fixed readable font; split rows across multiple sides when they don't fit.
+    const FONT_PT = 9;
+    const ROWS_PER_SIDE = 10;
+
+    for (let i = 0; i < n; i++) {
+      const me = names[i];
+
+      for (let k = 0; k < sets; k++) {
+        const codes = allCodes[k];
+        const rows = [];
+        for (let j = 0; j < n; j++) {
+          if (i === j) continue;
+          rows.push({ name: names[j], prove: codes[i][j], verify: codes[j][i] });
+        }
+
+        const totalSides = Math.max(1, Math.ceil(rows.length / ROWS_PER_SIDE));
+
+        for (let s = 0; s < totalSides; s++) {
+          const card = document.createElement("div");
+          card.className = "card";
+          card.style.fontSize = FONT_PT + "pt";
+
+          const slice = rows.slice(s * ROWS_PER_SIDE, (s + 1) * ROWS_PER_SIDE);
+          const cardLabel = sets > 1 ? ` #${k + 1}` : "";
+          const sideLabel = totalSides > 1 ? ` (Side ${s + 1} of ${totalSides})` : "";
+
+          let html = `<h2>Member ${escapeHtml(me)}'s Card${cardLabel}${sideLabel}</h2>`;
+          html += `<table>
+            <thead>
+              <tr>
+                <th>Other Member</th>
+                <th>To Prove I am ${escapeHtml(me)} to them, I say:</th>
+                <th>To Verify them, they must say:</th>
+              </tr>
+            </thead>
+            <tbody>`;
+          for (const r of slice) {
+            html += `<tr>
+              <td><strong>${escapeHtml(r.name)}</strong></td>
+              <td class="code">${r.prove}</td>
+              <td class="code">${r.verify}</td>
+            </tr>`;
+          }
+          html += `</tbody></table>`;
+          html += `<p class="note">Keep this card private.</p>`;
+          card.innerHTML = html;
+          out.appendChild(card);
+        }
+      }
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  generate();
+</script>
+
+</body>
+</html>
