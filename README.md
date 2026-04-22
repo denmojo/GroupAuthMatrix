@@ -17,3 +17,5 @@ The practical maximum for a double-sided card is 21 group members.
 To prevent code collision, length-2 codes are fine for 4–6 members and mostly ceremonial. For groups of 8+, bump the code length field to 3. For 15+, use 4. A coincidental duplicate doesn't break security (an attacker still can't see other cards), but it can produce ambiguous challenges at the moment of authentication, which is the real cost.
 
 No dependencies, no build step, no network calls. Open the file, generate, print.
+
+See example at [https://ad6dm.net/group-auth-matrix.html](https://ad6dm.net/group-auth-matrix.html).
